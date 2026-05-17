@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { cn } from '../lib/utils';
 import { getFirebase } from '../lib/firebase';
-import { doc, setDoc, serverTimestamp, collection, query, onSnapshot, orderBy, limit, where } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, collection, query, onSnapshot, orderBy, limit, where, getDocs } from 'firebase/firestore';
 import Header from './Header';
 import Sidebar, { type SidebarView } from './Sidebar';
 import LabCard from './LabCard';
@@ -29,6 +29,8 @@ export default function Dashboard() {
   const [selectedLab, setSelectedLab] = useState<Lab | null>(null);
   const [selectedTerminal, setSelectedTerminal] = useState<Terminal | null>(null);
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [isReleaseModalOpen, setIsReleaseModalOpen] = useState(false);
+  const [terminalToRelease, setTerminalToRelease] = useState<Terminal | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [labs, setLabs] = useState<Lab[]>(MOCK_LABS);
   const [terminals, setTerminals] = useState<Terminal[]>(MOCK_TERMINALS);
@@ -69,22 +71,51 @@ export default function Dashboard() {
   useEffect(() => {
     const interval = setInterval(() => {
       // Randomly change a terminal status
-      setTerminals(prev => prev.map(t => {
-        // DO NOT simulate status changes for terminals that are currently in 'booked' state or manually locked
-        if (manualBookings.has(t.id) || t.status === 'booked') return t;
+      setTerminals(prev => {
+        let changedLabId: string | null = null;
+        
+        const next = prev.map(t => {
+          // DO NOT simulate status changes for terminals that are currently in 'booked' state or manually locked
+          if (manualBookings.has(t.id) || t.status === 'booked') return t;
 
-        if (Math.random() > 0.95 && t.status !== 'maintenance') {
-          const statuses: TerminalStatus[] = ['available', 'occupied'];
-          const newStatus = statuses[Math.floor(Math.random() * statuses.length)];
-          return { 
-            ...t, 
-            status: newStatus,
-            currentUserInitials: newStatus === 'occupied' ? 'JS' : undefined,
-            remainingMinutes: undefined
+          if (Math.random() > 0.95 && t.status !== 'maintenance') {
+            const statuses: TerminalStatus[] = ['available', 'occupied'];
+            const newStatus = statuses[Math.floor(Math.random() * statuses.length)];
+            
+            // If it becomes available, mark for checking notifications
+            if (newStatus === 'available' && t.status !== 'available') {
+              changedLabId = t.labId;
+            }
+
+            return { 
+              ...t, 
+              status: newStatus,
+              currentUserInitials: newStatus === 'occupied' ? 'JS' : undefined,
+              remainingMinutes: undefined
+            };
+          }
+          return t;
+        });
+
+        // If a seat became available naturally, notify someone
+        if (changedLabId && db) {
+          const checkNotif = async () => {
+             const notifQ = query(
+              collection(db, 'notification_requests'),
+              where('labId', '==', changedLabId),
+              where('status', '==', 'pending'),
+              limit(1)
+            );
+            const snapshot = await getDocs(notifQ);
+            snapshot.forEach(async (d) => {
+              await setDoc(d.ref, { status: 'notified', updatedAt: serverTimestamp() }, { merge: true });
+            });
           };
+          checkNotif().catch(console.error);
         }
-        return t;
-      }));
+
+        return next;
+      });
     }, 10000); // Slower simulation for better UX
     return () => clearInterval(interval);
   }, [manualBookings]);
@@ -101,10 +132,9 @@ export default function Dashboard() {
   const handleTerminalClick = (terminal: Terminal) => {
     // If admin, they can release any seat
     if (user?.role === 'admin' && (terminal.status === 'occupied' || terminal.status === 'booked')) {
-      if (window.confirm(`Force release terminal ${terminal.id}?`)) {
-        forceReleaseTerminal(terminal.id);
-        return;
-      }
+      setTerminalToRelease(terminal);
+      setIsReleaseModalOpen(true);
+      return;
     }
 
     if (terminal.status === 'available') {
@@ -115,8 +145,56 @@ export default function Dashboard() {
 
   const { auth, db } = getFirebase();
 
-  // Forceful release also updates Firestore
+  // Notification logic: Listen to user's notifications
+  useEffect(() => {
+    if (!db || !user?.uid) return;
+
+    const q = query(
+      collection(db, 'notification_requests'),
+      where('userId', '==', user.uid),
+      where('status', '==', 'notified'),
+      limit(5)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added' || change.type === 'modified') {
+          const data = change.doc.data();
+          addToast(`SEAT AVAILABLE: A slot has opened up in ${data.labName}!`, 'success');
+          // Optionally mark as expired or seen
+          setDoc(change.doc.ref, { status: 'expired' }, { merge: true });
+        }
+      });
+    });
+
+    return () => unsubscribe();
+  }, [db, user]);
+
+  const handleNotifyMe = async (lab: Lab) => {
+    if (!db || !user?.uid) return;
+
+    try {
+      const requestId = `notif_${user.uid}_${lab.id}`;
+      await setDoc(doc(db, 'notification_requests', requestId), {
+        userId: user.uid,
+        username: user.username,
+        labId: lab.id,
+        labName: lab.name,
+        timestamp: serverTimestamp(),
+        status: 'pending'
+      });
+      addToast(`We'll notify you as soon as a seat opens in ${lab.name}.`, 'info');
+    } catch (err) {
+      console.error('Error setting notification:', err);
+      addToast('Failed to set notification. Try again.', 'error');
+    }
+  };
+
+  // Forceful release also updates Firestore and checks for notifications
   const forceReleaseTerminal = async (terminalId: string) => {
+    const terminal = terminals.find(t => t.id === terminalId);
+    const labId = terminal?.labId;
+
     setTerminals(prev => prev.map(t => 
       t.id === terminalId ? { ...t, status: 'available', currentUserInitials: undefined, remainingMinutes: undefined } : t
     ));
@@ -146,6 +224,22 @@ export default function Dashboard() {
           });
           unsubscribe(); // Run once
         });
+
+        // PROACTIVE NOTIFICATION: Notify pending users for this lab
+        if (labId) {
+          const notifQ = query(
+            collection(db, 'notification_requests'),
+            where('labId', '==', labId),
+            where('status', '==', 'pending'),
+            limit(1)
+          );
+          const unsubNotif = onSnapshot(notifQ, (snapshot) => {
+            snapshot.forEach(async (d) => {
+              await setDoc(d.ref, { status: 'notified', updatedAt: serverTimestamp() }, { merge: true });
+            });
+            unsubNotif();
+          });
+        }
         
         addToast(`Terminal ${terminalId} released and cloud synchronized.`, 'info');
       } catch (err) {
@@ -405,6 +499,30 @@ export default function Dashboard() {
                         <p className="text-[10px] font-bold text-slate-400 font-mono uppercase tracking-[0.2em] mt-1">Terminal Grid Mapping</p>
                       </div>
                       
+                      {terminals.filter(t => t.labId === selectedLab.id).every(t => t.status !== 'available') && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="mb-8 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center text-amber-600">
+                              <Info size={18} />
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-amber-900">Lab is currently at full capacity.</p>
+                              <p className="text-xs text-amber-700 font-medium tracking-tight">Don't wait around—we can alert you instantly.</p>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => handleNotifyMe(selectedLab)}
+                            className="bg-amber-600 text-white px-4 py-2 rounded-xl text-xs font-black shadow-lg shadow-amber-600/20 hover:bg-amber-700 transition-all active:scale-95"
+                          >
+                            NOTIFY ME WHEN FREE
+                          </button>
+                        </motion.div>
+                      )}
+
                       <TerminalGrid 
                         terminals={terminals.filter(t => t.labId === selectedLab.id)} 
                         onTerminalClick={handleTerminalClick}
@@ -497,6 +615,61 @@ export default function Dashboard() {
             lab={selectedLab}
             onSuccess={handleBookingSuccess}
           />
+
+          <AnimatePresence>
+            {isReleaseModalOpen && terminalToRelease && (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setIsReleaseModalOpen(false)}
+                  className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+                />
+                
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                  className="relative w-full max-w-md bg-white rounded-[32px] shadow-2xl shadow-slate-900/40 overflow-hidden"
+                >
+                  <div className="p-8">
+                    <div className="w-16 h-16 bg-rose-100 rounded-2xl flex items-center justify-center text-rose-600 mb-6 mx-auto">
+                      <ShieldCheck size={32} />
+                    </div>
+                    
+                    <h3 className="text-2xl font-black text-center text-slate-900 mb-2">FORCE RELEASE?</h3>
+                    <p className="text-slate-500 text-center font-medium mb-8">
+                      You are about to terminate the session for <span className="text-slate-900 font-bold">{terminalToRelease.id}</span>. This action will make the seat available immediately.
+                    </p>
+
+                    <div className="flex flex-col gap-3">
+                      <button
+                        onClick={() => {
+                          forceReleaseTerminal(terminalToRelease.id);
+                          setIsReleaseModalOpen(false);
+                        }}
+                        className="w-full bg-rose-600 text-white rounded-2xl py-4 font-black hover:bg-rose-700 transition-all active:scale-95 shadow-xl shadow-rose-600/20"
+                      >
+                        YES, RELEASE TERMINAL
+                      </button>
+                      <button
+                        onClick={() => setIsReleaseModalOpen(false)}
+                        className="w-full bg-slate-100 text-slate-600 rounded-2xl py-4 font-black hover:bg-slate-200 transition-all"
+                      >
+                        CANCEL
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-slate-50 p-4 border-t border-slate-100 flex items-center justify-center gap-2">
+                    <div className="w-2 h-2 bg-rose-500 rounded-full animate-pulse" />
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Admin Authorization Required</span>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
           
           <ToastContainer toasts={toasts} removeToast={removeToast} />
         </main>

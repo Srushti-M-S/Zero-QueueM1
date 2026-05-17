@@ -40,6 +40,20 @@
         "details": { "type": "string" }
       },
       "required": ["userId", "timestamp", "action"]
+    },
+    "NotificationRequest": {
+      "title": "Availability Notification",
+      "description": "Request to be notified when a lab seat becomes available",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "labId": { "type": "string" },
+        "labName": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "notified", "expired"] }
+      },
+      "required": ["userId", "labId", "status"]
     }
   },
   "firestore": {
@@ -54,6 +68,10 @@
     "/access_logs/{logId}": {
       "schema": "AccessLog",
       "description": "System access logs for auditing"
+    },
+    "/notification_requests/{requestId}": {
+      "schema": "NotificationRequest",
+      "description": "User requests for availability alerts"
     }
   }
 }

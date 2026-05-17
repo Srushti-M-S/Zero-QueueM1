@@ -55,8 +55,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       // For demo purposes, we use Anonymous Auth and store the username/role in Firestore
-      const cred = await signInAnonymously(auth);
-      const uid = cred.user.uid;
+      let uid: string;
+      try {
+        const cred = await signInAnonymously(auth);
+        uid = cred.user.uid;
+      } catch (authErr: any) {
+        console.warn('Firebase Auth restricted, using persistent guest ID:', authErr.message);
+        // Fallback to a stable ID based on username for demo consistency
+        uid = `guest_${username.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+      }
       
       const userRef = doc(db, 'users', uid);
       await setDoc(userRef, {
@@ -78,8 +85,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setUser({ username, role, uid });
     } catch (error) {
-      console.error('Login error:', error);
-      // Fallback
+      console.error('Final login fallback error:', error);
+      // Fallback to local only
       setUser({ username, role });
     }
   };

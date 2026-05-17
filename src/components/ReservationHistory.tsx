@@ -10,7 +10,7 @@ import { collection, query, onSnapshot, orderBy, limit } from 'firebase/firestor
 interface ReservationHistoryProps {
   terminals: Terminal[];
   labs: Lab[];
-  key?: string;
+  key?: string | number;
 }
 
 export default function ReservationHistory({ terminals, labs }: ReservationHistoryProps) {
