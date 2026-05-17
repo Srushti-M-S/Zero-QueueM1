@@ -1,0 +1,17 @@
+{
+  "short_name": "ZeroQueue",
+  "name": "ZeroQueue - Lab Resource Manager",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "scope": "/",
+  "theme_color": "#2563eb",
+  "description": "Real-time campus lab occupancy and terminal booking system."
+}

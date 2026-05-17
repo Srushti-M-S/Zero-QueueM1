@@ -28,7 +28,6 @@ interface TerminalUnitProps {
   terminal: Terminal;
   onClick: () => void;
   clickable?: boolean;
-  key?: string | number;
 }
 
 function TerminalUnit({ terminal, onClick, clickable }: TerminalUnitProps) {

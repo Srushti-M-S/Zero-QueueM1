@@ -32,7 +32,8 @@ export default function ReservationHistory({ terminals, labs }: ReservationHisto
         const data = doc.data();
         const lab = labs.find(l => l.id === data.labId);
         return {
-          id: doc.id.substring(0, 8).toUpperCase(),
+          id: doc.id, // Use full document ID for uniqueness
+          displayId: doc.id.substring(0, 8).toUpperCase(), 
           terminalId: data.terminalId,
           lab: lab?.name || 'Lab Resource',
           user: data.username || 'Student',
@@ -57,6 +58,7 @@ export default function ReservationHistory({ terminals, labs }: ReservationHisto
       const lab = labs.find(l => l.id === t.labId);
       return {
         id: `ACT-${t.id}`,
+        displayId: `ACT-${t.id.split('-').pop()}`,
         terminalId: t.id,
         lab: lab?.name || 'Unknown Lab',
         user: t.currentUserInitials ? `${t.currentUserInitials} (Student)` : 'Anonymous',
@@ -67,8 +69,8 @@ export default function ReservationHistory({ terminals, labs }: ReservationHisto
     });
 
   const mockCompleted = [
-    { id: 'HB-001', terminalId: 'L1-T15', lab: labs[0]?.name || 'CS Advanced Lab', user: 'Marcus R.', date: subDays(new Date(), 0.1), duration: '2h', status: 'completed' as const },
-    { id: 'HB-002', terminalId: 'L2-T08', lab: labs[1]?.name || 'Graphics Lab', user: 'Eleanor V.', date: subDays(new Date(), 1), duration: '1h', status: 'completed' as const },
+    { id: 'HB-001', displayId: 'HB-001', terminalId: 'L1-T15', lab: labs[0]?.name || 'CS Advanced Lab', user: 'Marcus R.', date: subDays(new Date(), 0.1), duration: '2h', status: 'completed' as const },
+    { id: 'HB-002', displayId: 'HB-002', terminalId: 'L2-T08', lab: labs[1]?.name || 'Graphics Lab', user: 'Eleanor V.', date: subDays(new Date(), 1), duration: '1h', status: 'completed' as const },
   ];
 
   const allHistory = [...dbHistory, ...activeSessions, ...mockCompleted].sort((a, b) => b.date.getTime() - a.date.getTime());
@@ -128,7 +130,7 @@ export default function ReservationHistory({ terminals, labs }: ReservationHisto
               {filteredHistory.map((item) => (
                 <tr key={item.id} className="text-xs group hover:bg-slate-50/50 transition-colors">
                   <td className="px-6 py-4">
-                    <span className="font-mono text-slate-400 font-bold">{item.id}</span>
+                    <span className="font-mono text-slate-400 font-bold">{item.displayId}</span>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
