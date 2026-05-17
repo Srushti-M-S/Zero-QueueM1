@@ -56,9 +56,9 @@ export default function LoginPage() {
                 Zero<span className="text-blue-600">Queue</span>
               </span>
             </div>
-            <div className="px-3 py-1 bg-amber-50 border border-amber-200 rounded-full text-[8px] font-black text-amber-600 uppercase tracking-widest">
-              Live Demo Mode
-            </div>
+            {/* <div className="px-3 py-1 bg-amber-50 border border-amber-200 rounded-full text-[8px] font-black text-amber-600 uppercase tracking-widest">
+              .
+            </div> */}
           </div>
           
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">System Access</h1>
