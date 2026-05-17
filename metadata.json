@@ -1,0 +1,6 @@
+{
+  "name": "ZeroQueue - Lab Resource Manager",
+  "description": "A real-time campus lab occupancy and terminal booking system for educational institutions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

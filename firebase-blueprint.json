@@ -1,0 +1,59 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account information and role",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "username": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "student"] },
+        "email": { "type": "string" },
+        "lastLogin": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "username", "role"]
+    },
+    "Booking": {
+      "title": "Lab Booking",
+      "description": "Information about a specific terminal booking",
+      "type": "object",
+      "properties": {
+        "terminalId": { "type": "string" },
+        "labId": { "type": "string" },
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "startTime": { "type": "string", "format": "date-time" },
+        "duration": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "completed", "cancelled"] }
+      },
+      "required": ["terminalId", "labId", "userId", "startTime", "status"]
+    },
+    "AccessLog": {
+      "title": "Access Log",
+      "description": "Record of user activity in the system",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "action": { "type": "string" },
+        "details": { "type": "string" }
+      },
+      "required": ["userId", "timestamp", "action"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Stored user profiles"
+    },
+    "/bookings/{bookingId}": {
+      "schema": "Booking",
+      "description": "All lab seat bookings"
+    },
+    "/access_logs/{logId}": {
+      "schema": "AccessLog",
+      "description": "System access logs for auditing"
+    }
+  }
+}
